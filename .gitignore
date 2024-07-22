@@ -1,0 +1,5 @@
+.env
+wallets.db
+node_modules/
+
+config.json
