@@ -7,7 +7,6 @@ const {
 } = require('discord.js')
 const { ethers } = require('ethers')
 const db = require('./database')
-
 const {
   ActionRowBuilder,
   ModalBuilder,
@@ -23,6 +22,7 @@ const {
   MODE_THUMBNAIL,
 } = require('./const/config.const')
 
+// Initialize Discord client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -31,28 +31,26 @@ const client = new Client({
   ],
 })
 
+// Initialize Ethereum provider and contract
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL)
 const contractAddress = process.env.MODE_CONTRACT_ADDRESS
 const abi = ['function balanceOf(address owner) view returns (uint256)']
 const contract = new ethers.Contract(contractAddress, abi, provider)
 
+// Helper function to get wallet address from the database
 function getWalletAddressMember(message, type = TYPE_MESSAGE) {
-  if (type === TYPE_MESSAGE) {
-    return db
-      .prepare('SELECT walletAddress FROM wallets WHERE userId = ?')
-      .get(message.author.id)?.walletAddress
-  }
-
+  const userId = type === TYPE_MESSAGE ? message.author.id : message.user.id
   return db
     .prepare('SELECT walletAddress FROM wallets WHERE userId = ?')
-    .get(message.user.id)?.walletAddress
+    .get(userId)?.walletAddress
 }
 
+// Helper function to get MODE balance
 async function getModeBalance(walletAddress) {
-  const balance = await contract.balanceOf(walletAddress)
-  return balance
+  return contract.balanceOf(walletAddress)
 }
 
+// Fetch and extract words from URL
 async function fetchAndExtractWords(url, signerWallet, hashTxn) {
   try {
     const response = await fetch(url)
@@ -60,15 +58,11 @@ async function fetchAndExtractWords(url, signerWallet, hashTxn) {
 
     const regex =
       /\b(As the owner of my wallet, I request to update my wallet on Mode Network|0x\w*)\b/g
-    const matches = text.match(regex)
+    const matches = text.match(regex) || []
 
-    const result = matches || []
+    const signW = matches.find((word) => word === signerWallet)
+    const hashTx = matches.find((word) => word === hashTxn)
 
-    // console.log(result)
-    const signW = result.find((word) => word === signerWallet)
-    const hashTx = result.find((word) => word === hashTxn)
-
-    // console.log('signW:', signW, ' hashTx:', hashTx)
     if (signW && hashTx) {
       console.log('puede registrar')
     }
@@ -77,31 +71,31 @@ async function fetchAndExtractWords(url, signerWallet, hashTxn) {
   }
 }
 
+// Get staked balance from external endpoint
 async function getStakedBalance(walletAddress) {
   try {
     const response = await fetch(`${MODE_FUNDS_ENDPOINT}/${walletAddress}`)
-    const result = await response.json()
-
-    return result
+    return response.json()
   } catch (error) {
     console.error('Error fetching the URL:', error)
   }
 }
 
-client.once(Events.ClientReady, async () => {
+// Log in message
+client.once(Events.ClientReady, () => {
   console.log(`Logged in as ${client.user.username}`)
 })
 
+// Handle interaction commands
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return
 
   const member = interaction.guild.members.cache.get(interaction.user.id)
   const avatar = member.user.avatarURL({ dynamic: true, size: 2048 })
   const username = member.user.username
+  const walletAddress = getWalletAddressMember(interaction, TYPE_INTERACTION)
 
   if (interaction.commandName === 'addr') {
-    const walletAddress = getWalletAddressMember(interaction, TYPE_INTERACTION)
-
     const walletEmbed = customCard({
       titleMedia: `${username}'s wallet`,
       avatar,
@@ -109,14 +103,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       description: walletAddress,
     })
 
-    await interaction.reply({
-      embeds: [walletEmbed],
-      ephemeral: true,
-    })
+    await interaction.reply({ embeds: [walletEmbed], ephemeral: true })
   }
-  if (interaction.commandName === 'bal') {
-    const walletAddress = getWalletAddressMember(interaction, TYPE_INTERACTION)
 
+  if (interaction.commandName === 'bal') {
     if (!walletAddress) {
       const noWalletEmbed = customCard({
         isError: true,
@@ -127,10 +117,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           'No wallet address found. Please use /update <WALLET_ADDRESS> to register your wallet address.',
       })
 
-      await interaction.reply({
-        embeds: [noWalletEmbed],
-        ephemeral: true,
-      })
+      await interaction.reply({ embeds: [noWalletEmbed], ephemeral: true })
       return
     }
 
@@ -145,10 +132,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         description: `${formattedBalance} MODE`,
       })
 
-      await interaction.reply({
-        embeds: [walletEmbed],
-        ephemeral: true,
-      })
+      await interaction.reply({ embeds: [walletEmbed], ephemeral: true })
     } catch (error) {
       console.error(error)
       await interaction.reply({
@@ -158,19 +142,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
       })
     }
   }
-  if (interaction.commandName === 'check') {
-    const walletAddress = getWalletAddressMember(interaction, TYPE_INTERACTION)
 
+  if (interaction.commandName === 'check') {
     const staked = await getStakedBalance(walletAddress)
-    console.log('staked:', staked)
-    console.log('staked.ModeToken:', staked.ModeToken)
     const modeBalance = staked?.ModeToken ?? 0.0
 
     const role = interaction.guild.roles.cache.find(
       (memberRole) => memberRole.name === MODE_HOLDER_ROLE_NAME
     )
-
-    console.log('role:', role)
 
     if (role) {
       if (modeBalance <= MIN_BALANCE) {
@@ -183,7 +162,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       await interaction.member.roles.add(role)
-
       const walletEmbed = customCard({
         titleMedia: `${username}'s staker`,
         avatar,
@@ -191,17 +169,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
         description: `Role: ${MODE_HOLDER_ROLE_NAME} granted. With ${modeBalance} MODE`,
       })
 
-      await interaction.reply({
-        embeds: [walletEmbed],
-        ephemeral: true,
-      })
-      return
+      await interaction.reply({ embeds: [walletEmbed], ephemeral: true })
     }
   }
-})
-
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) return
 
   if (interaction.commandName === 'update') {
     const walletAddress = interaction.options.getString('wallet')
@@ -217,14 +187,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       interaction.user.id
     )
 
-    return interaction.reply(
+    interaction.reply(
       `Your wallet address ${walletAddress} has been updated and verified.`
     )
   }
-})
-
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) return
 
   if (interaction.commandName === 'update_with_form') {
     const modal = new ModalBuilder()
@@ -233,56 +199,44 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const walletAddressInput = new TextInputBuilder()
       .setCustomId('walletAddressInput')
-
-      .setLabel('Enter you Mode Wallet Address')
-
+      .setLabel('Enter your Mode Wallet Address')
       .setStyle(TextInputStyle.Short)
 
     const signatureHashInput = new TextInputBuilder()
       .setCustomId('signatureHashInput')
-      .setLabel('Enter you Signature Hash')
-
+      .setLabel('Enter your Signature Hash')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('Ej.: 0x12345678....')
+      .setPlaceholder('E.g.: 0x12345678....')
       .setMaxLength(132)
 
-    const firstActionRow = new ActionRowBuilder().addComponents(
-      walletAddressInput
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(walletAddressInput),
+      new ActionRowBuilder().addComponents(signatureHashInput)
     )
-    const secondActionRow = new ActionRowBuilder().addComponents(
-      signatureHashInput
-    )
-
-    modal.addComponents(firstActionRow, secondActionRow)
 
     await interaction.showModal(modal)
   }
-})
 
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isModalSubmit()) return
-  if (interaction.customId === 'registerForm') {
+  if (interaction.isModalSubmit() && interaction.customId === 'registerForm') {
     await interaction.reply({
       content: 'Your submission was received successfully!',
+      ephemeral: true,
     })
+
+    const walletAddress =
+      interaction.fields.getTextInputValue('walletAddressInput')
+    const signatureHash =
+      interaction.fields.getTextInputValue('signatureHashInput')
+
+    fetchAndExtractWords(
+      'https://etherscan.io/verifySig/254144',
+      walletAddress,
+      signatureHash
+    )
   }
-
-  // Get the data entered by the user
-  const walletAddress =
-    interaction.fields.getTextInputValue('walletAddressInput')
-  const signatureHash =
-    interaction.fields.getTextInputValue('signatureHashInput')
-  console.log({ walletAddress, signatureHash })
-
-  fetchAndExtractWords(
-    'https://etherscan.io/verifySig/254144',
-    walletAddress,
-    signatureHash
-  )
 })
 
-client.login(process.env.DISCORD_TOKEN)
-
+// Custom card creation
 const customCard = ({
   isError = false,
   titleMedia,
@@ -292,17 +246,12 @@ const customCard = ({
   description = 'Description',
 }) => {
   const color = isError ? 0xff0000 : 0xdffe00
-  const walletEmbed = new EmbedBuilder()
+  return new EmbedBuilder()
     .setColor(color)
-    .setAuthor({
-      name: titleMedia,
-      iconURL: avatar,
-    })
+    .setAuthor({ name: titleMedia, iconURL: avatar })
     .setThumbnail(thumbnail)
-    .addFields({
-      name: subtitle,
-      value: description,
-    })
-
-  return walletEmbed
+    .addFields({ name: subtitle, value: description })
 }
+
+// Login the Discord client
+client.login(process.env.DISCORD_TOKEN)
