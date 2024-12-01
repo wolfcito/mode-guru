@@ -1,3 +1,7 @@
+> ⚠️ Warning: 
+> The code within this repository is provided without any warranties. It is important to note that the code has not been audited for potential security vulnerabilities. Using this code could potentially lead to loss of funds, compromised data, or asset risk. Exercise caution and use this code at your own risk. Please refer to the LICENSE file for details about the terms and conditions.
+
+
 # Discord Bot for Mode Network
 
 ![simple aimagen](https://github.com/user-attachments/assets/f2958cf8-49ba-470f-89c4-8ef066c08962)
@@ -175,4 +179,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Contact
 
-If you have questions or suggestions, you can open an issue in the repository or contact the main maintainer at [guffenix+github@gmail.com](guffenix+github@gmail.com).
+If you have questions or suggestions, you can open an issue in the repository or contact the main maintainer at [email](guffenix+github@gmail.com).
